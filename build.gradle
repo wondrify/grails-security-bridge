@@ -37,6 +37,8 @@ dependencies {
     implementation "org.springframework.boot:spring-boot-starter-tomcat"
     implementation "org.apache.grails:grails-core"
     implementation "org.apache.grails:grails-web-boot"
+    compileOnly 'org.apache.grails.views:grails-web-taglib' // For taglib compilation
+
     implementation platform("org.apache.grails:grails-bom:$grailsVersion")
     testImplementation "org.apache.grails:grails-testing-support-datamapping"
     testImplementation "org.mockito:mockito-core"
