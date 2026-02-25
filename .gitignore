@@ -4,5 +4,4 @@ build/
 .gradle/
 log/
 plugin.xml
-settings.gradle
 *.zip

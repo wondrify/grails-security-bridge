@@ -1,0 +1,350 @@
+= Grails Security Bridge Documentation
+:toc: left
+:toclevels: 3
+:source-highlighter: coderay
+:icons: font
+
+== Introduction
+
+The Grails Security Bridge plugin provides a decoupled, cross-plugin security interface for Grails applications. It allows you to keep the majority of authentication logic in one plugin, while other plugins can reference a common API to retrieve user identity, authorization status, and other security information without depending on a specific security implementation.
+
+=== Key Features
+
+* *Decoupled Security Interface*: A common `SecurityBridge` interface that any security provider can implement
+* *Shared Security Service*: A single `SharedSecurityService` that delegates to the active bridge implementation
+* *Annotation-Based Access Control*: Use `@Secure` annotations on controllers and actions to restrict access by role
+* *Interceptor-Based Enforcement*: Automatic interception of requests to enforce `@Secure` annotations
+* *GSP Tag Library*: Security-aware tags for conditionally rendering content in views
+* *Multi-Plugin Friendly*: Designed so multiple plugins can share a single security contract without tight coupling
+
+== Installation
+
+=== Grails 7
+
+Add the plugin dependency to your `build.gradle`:
+
+[source,groovy]
+----
+dependencies {
+    implementation 'cloud.wondrify:grails-security-bridge:7.0.0'
+}
+----
+
+=== Grails 6.x and Earlier
+
+For Grails 6.x and earlier versions, use the previous artifact coordinates:
+
+[source,groovy]
+----
+dependencies {
+    implementation 'com.bertramlabs.plugins:grails-security-bridge:6.x.x'
+}
+----
+
+== Quick Start
+
+To use the Security Bridge plugin, you need to:
+
+1. Add the plugin dependency
+2. Create a class that implements the `SecurityBridge` interface
+3. Register your implementation as a Spring bean named `sharedSecurityBridge`
+4. Optionally annotate controllers with `@Secure`
+
+=== Step 1: Implement the SecurityBridge Interface
+
+Create a class that implements `SecurityBridge` (or extends `AbstractSecurityBridge` for convenience):
+
+[source,groovy]
+----
+package com.myapp.security
+
+import org.grails.plugin.securitybridge.AbstractSecurityBridge
+
+class MySecurityBridge extends AbstractSecurityBridge {
+
+    def springSecurityService // or whatever your auth provider is
+
+    def getCurrentUser() {
+        springSecurityService.currentUser
+    }
+
+    def getUserIdentity() {
+        springSecurityService.currentUser?.username
+    }
+
+    def getCurrentUserDisplayName() {
+        def user = springSecurityService.currentUser
+        return user ? "${user.firstName} ${user.lastName}" : null
+    }
+
+    boolean isLoggedIn() {
+        springSecurityService.isLoggedIn()
+    }
+
+    boolean hasRole(role) {
+        springSecurityService.currentUser?.authorities?.any {
+            it.authority == role
+        } ?: false
+    }
+
+    boolean hasPermission(permission, opts = null) {
+        // Implement permission checking based on your model
+        false
+    }
+
+    boolean isAuthorized(object, action) {
+        // Implement authorization logic
+        isLoggedIn()
+    }
+
+    def storeLocation(request) {
+        // Store the original request URL for post-login redirect
+    }
+
+    def withUser(identity, Closure code) {
+        // Execute closure as the given user
+    }
+
+    Map createLink(String action) {
+        switch (action) {
+            case 'login':
+                return [controller: 'login', action: 'auth']
+            case 'logout':
+                return [controller: 'logout']
+            case 'signup':
+                return [controller: 'register']
+            default:
+                return [:]
+        }
+    }
+}
+----
+
+=== Step 2: Register the Bean
+
+In your application's `grails-app/conf/spring/resources.groovy` (or via a plugin descriptor), register your bridge:
+
+[source,groovy]
+----
+beans = {
+    sharedSecurityBridge(com.myapp.security.MySecurityBridge)
+}
+----
+
+=== Step 3: Use the Shared Security Service
+
+Inject `sharedSecurityService` in any service or controller:
+
+[source,groovy]
+----
+class DashboardController {
+    def sharedSecurityService
+
+    def index() {
+        if (!sharedSecurityService.isLoggedIn()) {
+            redirect(sharedSecurityService.createLink('login'))
+            return
+        }
+
+        [
+            user: sharedSecurityService.currentUser,
+            displayName: sharedSecurityService.currentUserDisplayName
+        ]
+    }
+}
+----
+
+== SecurityBridge Interface
+
+The `SecurityBridge` interface defines the contract that all security provider implementations must fulfill.
+
+=== Methods
+
+* `getCurrentUser()` — Returns the current user object, or `null` if nobody is logged in
+* `getUserIdentity()` — Returns the user identity (e.g. username), or `null`
+* `getCurrentAccount()` — Returns the account object of the logged-in user, or `null`
+* `getAccountIdentity()` — Returns the account identity (useful for multi-tenant setups), or `null`
+* `getCurrentUserDisplayName()` — Returns the display name of the current user
+* `isLoggedIn()` — Returns `true` if a user is currently authenticated
+* `isAuthorized(object, action)` — Checks whether the current user is authorized to perform `action` on `object`
+* `hasRole(role)` — Checks if the current user has the specified role
+* `hasPermission(permission)` — Checks if the current user has the specified permission
+* `hasPermission(permission, opts)` — Checks permission with additional options
+* `storeLocation(request)` — Stores the current request URL so the user can be redirected after login
+* `withUser(identity, Closure code)` — Executes a closure masquerading as the specified user
+* `createLink(String action)` — Returns a Map of link parameters for security actions (`"login"`, `"logout"`, `"signup"`)
+
+== AbstractSecurityBridge
+
+The `AbstractSecurityBridge` class provides a convenient base implementation of `SecurityBridge` where all methods return safe defaults (`null`, `false`, or no-op). You can extend it and override only the methods relevant to your security provider.
+
+[source,groovy]
+----
+class MinimalBridge extends AbstractSecurityBridge {
+
+    boolean isLoggedIn() {
+        // your implementation
+    }
+
+    def getCurrentUser() {
+        // your implementation
+    }
+}
+----
+
+== SharedSecurityService
+
+The `SharedSecurityService` is the primary service you interact with in your application code. It delegates all calls to the registered `sharedSecurityBridge` bean.
+
+=== Additional Methods
+
+Beyond the `SecurityBridge` interface methods, the service provides:
+
+* `hasProvider()` — Returns `true` if a security bridge implementation has been registered
+* `hasAnyRole(roles)` — Checks if the current user has any of the given roles (accepts a single role or a Collection)
+* `ifAuthorized(object, action, Closure code)` — Executes the closure only if the user is authorized; the closure receives `(currentUser, currentAccount)` as arguments
+
+=== Example
+
+[source,groovy]
+----
+class ReportService {
+    def sharedSecurityService
+
+    def generateReport() {
+        sharedSecurityService.ifAuthorized('reports', 'generate') { user, account ->
+            // Build report for this user/account
+        }
+    }
+}
+----
+
+== The @Secure Annotation
+
+The `@Secure` annotation can be applied to controllers or individual actions to restrict access by role. When a request matches a secured controller/action, the `SecurityBridgeInterceptor` checks whether the current user has any of the specified roles.
+
+=== Usage
+
+[source,groovy]
+----
+import org.grails.plugin.securitybridge.Secure
+
+// Secure the entire controller — all actions require ROLE_ADMIN
+@Secure(['ROLE_ADMIN'])
+class AdminController {
+
+    def index() {
+        // Only accessible to users with ROLE_ADMIN
+    }
+
+    def settings() {
+        // Also requires ROLE_ADMIN
+    }
+}
+----
+
+[source,groovy]
+----
+import org.grails.plugin.securitybridge.Secure
+
+class UserController {
+
+    def index() {
+        // No restriction
+    }
+
+    // Secure a single action
+    @Secure(['ROLE_ADMIN', 'ROLE_MANAGER'])
+    def edit() {
+        // Only accessible to ROLE_ADMIN or ROLE_MANAGER
+    }
+}
+----
+
+If the user does not have any of the required roles, the interceptor stores the current request location and redirects to the login page (as returned by `SecurityBridge.createLink('login')`).
+
+== Tag Library
+
+The plugin provides GSP tags under the `security` namespace.
+
+=== security:ifLoggedIn
+
+Renders the body only if the user is logged in.
+
+[source,html]
+----
+<security:ifLoggedIn>
+    Welcome back!
+</security:ifLoggedIn>
+----
+
+=== security:ifNotLoggedIn
+
+Renders the body only if the user is NOT logged in.
+
+[source,html]
+----
+<security:ifNotLoggedIn>
+    <a href="/login">Please log in</a>
+</security:ifNotLoggedIn>
+----
+
+=== security:currentUserProperty
+
+Outputs a property of the current user object.
+
+[source,html]
+----
+Hello, <security:currentUserProperty property="firstName" />!
+----
+
+=== security:ifAuthorized
+
+Renders the body if the current user is authorized for a given controller/action.
+
+[source,html]
+----
+<security:ifAuthorized controller="admin" action="index">
+    <a href="/admin">Admin Panel</a>
+</security:ifAuthorized>
+----
+
+Supports an optional `namespace` attribute to disambiguate controllers.
+
+=== security:ifNotAuthorized
+
+Renders the body if the current user is NOT authorized for a given controller/action.
+
+[source,html]
+----
+<security:ifNotAuthorized controller="admin" action="index">
+    You do not have access to the admin panel.
+</security:ifNotAuthorized>
+----
+
+=== security:createLink
+
+Creates an anchor tag linking to a security action (login, logout, signup).
+
+[source,html]
+----
+<security:createLink action="login" class="btn">Sign In</security:createLink>
+<security:createLink action="logout" class="btn">Sign Out</security:createLink>
+----
+
+== Interceptor
+
+The `SecurityBridgeInterceptor` runs at `HIGHEST_PRECEDENCE` and matches all requests. It inspects the target controller and action for the `@Secure` annotation. If present, it checks `sharedSecurityService.hasAnyRole(annotation.value())`.
+
+* If the user has one of the required roles, the request proceeds.
+* If not, `storeLocation(request)` is called, and the user is redirected to the login link.
+* If no `@Secure` annotation is present, the request passes through without restriction.
+
+== Getting Help
+
+* GitHub Issues: https://github.com/wondrify/grails-security-bridge/issues
+* Source Code: https://github.com/wondrify/grails-security-bridge
+
+== License
+
+Grails Security Bridge is open source software licensed under the Apache License 2.0.

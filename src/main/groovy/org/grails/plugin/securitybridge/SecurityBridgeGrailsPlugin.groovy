@@ -31,9 +31,9 @@ class SecurityBridgeGrailsPlugin extends Plugin {
         [name: 'Jeremy Michael Crosbie', email: 'jcrosbie@bcap.com'],
         [name: 'William Chu', email: 'wchu@bcap.com']
     ]
-    def documentation   = "http://bertramdev.github.io/grails-security-bridge"
+    def documentation   = "https://wondrify.github.io/grails-security-bridge"
     def license = "APACHE"
-    def organization = [name: "Bertram Labs", url: "http://www.bertramlabs.com/"]
-    def issueManagement = [system: "GITHUB", url: "https://github.com/bertramdev/grails-security-bridge/issues"]
-    def scm = [url: "https://github.com/bertramdev/grails-security-bridge"]
+    def organization = [name: "Wondrify", url: "https://wondrify.cloud/"]
+    def issueManagement = [system: "GITHUB", url: "https://github.com/wondrify/grails-security-bridge/issues"]
+    def scm = [url: "https://github.com/wondrify/grails-security-bridge"]
 }
